@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duh Road! event</title>
+<meta name="description" content="Find what's going on across Jamaica.">
+<meta property="og:title" content="An event on Duh Road!">
+<meta property="og:description" content="Tap to see the event and open it in the Duh Road! app.">
+<meta property="og:type" content="website">
+<style>
+  :root { --bg:#fff7ec; --card:#ffffff; --text:#002d55; --muted:#5a5a5a; --accent:#eb4203; --teal:#39998e; --btn:#fcefc3; --btnText:#0b4a2e; --purple:#6d28d9; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e141b; --card:#18212b; --text:#eef2f6; --muted:#a3adb8; --purple:#b794f6; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+  main { max-width:480px; margin:0 auto; padding:24px 16px 40px; }
+  .brand { color:var(--teal); font-weight:800; font-size:28px; text-align:center; margin:4px 0 16px; }
+  .card { background:var(--card); border-radius:18px; padding:18px; box-shadow:0 2px 12px #0001; }
+  img.photo { width:100%; border-radius:12px; margin-bottom:12px; display:none; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  .cat { color:var(--purple); font-weight:700; font-size:13px; letter-spacing:.5px; }
+  .muted { color:var(--muted); }
+  .btn { display:block; text-align:center; text-decoration:none; font-weight:700; padding:15px; border-radius:14px; margin-top:12px; }
+  .primary { background:var(--btn); color:var(--btnText); }
+  .ghost { border:1px solid #d9d9e0; color:var(--accent); }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">Duh Road!</div>
+  <div class="card">
+    <img class="photo" id="photo" alt="">
+    <div class="cat" id="cat"></div>
+    <h1 id="title">Loading the event…</h1>
+    <div id="when"></div>
+    <div id="where" class="muted"></div>
+    <p id="desc" class="muted"></p>
+    <a class="btn primary hide" id="open" href="#">Open in the Duh Road! app</a>
+    <a class="btn ghost hide" id="map" href="#" target="_blank" rel="noopener">Open in Maps</a>
+    <a class="btn ghost hide" id="store" href="#">Get the app</a>
+  </div>
+</main>
+<script>
+// The Supabase publishable key is intentionally public. Database policies control visible event data.
+const SUPABASE_URL = 'https://auhqicdordkbtbhzkpyt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_mejKL9zRTZ65C5CUYd0ciA_WzkdSVbH';
+const ANDROID_PACKAGE = 'com.duhroad.app';
+const PLAY_URL = '';
+const APP_STORE_URL = '';
+
+const $ = (id) => document.getElementById(id);
+const id = (new URLSearchParams(location.search).get('id') || '').toLowerCase();
+const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
+const android = /android/i.test(navigator.userAgent);
+const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const store = android ? PLAY_URL : ios ? APP_STORE_URL : (PLAY_URL || APP_STORE_URL);
+
+const fmtTime = (t) => {
+  const m = /^\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?\s*$/i.exec(String(t || ''));
+  if (!m) return '';
+  if (m[3]) return `${Number(m[1])}:${m[2]} ${m[3].toUpperCase()}`;
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h >= 12 ? 'PM' : 'AM'}`;
+};
+
+if (store) { $('store').href = store; $('store').classList.remove('hide'); }
+
+if (isUuid) {
+  const appLink = android
+    ? `intent://event/${id}#Intent;scheme=duhroad;package=${ANDROID_PACKAGE};${PLAY_URL ? 'S.browser_fallback_url=' + encodeURIComponent(PLAY_URL) + ';' : ''}end`
+    : `duhroad://event/${id}`;
+  $('open').href = appLink;
+  $('open').classList.remove('hide');
+
+  fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${id}&select=title,category,description,event_date,start_time,venue,parish,lat,lng,image_url`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+  })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+    .then((rows) => {
+      const e = rows && rows[0];
+      if (!e) { $('title').textContent = 'This event is no longer available'; return; }
+      document.title = `${e.title} · Duh Road!`;
+      $('title').textContent = e.title;
+      $('cat').textContent = (e.category || '').toUpperCase();
+      const day = e.event_date ? new Date(e.event_date + 'T00:00:00').toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+      $('when').textContent = [day, fmtTime(e.start_time)].filter(Boolean).join(' · ');
+      $('where').textContent = [e.venue, e.parish].filter(Boolean).join(', ');
+      $('desc').textContent = e.description || '';
+      const hasPin = Number.isFinite(Number(e.lat)) && Number.isFinite(Number(e.lng)) && e.lat !== null && e.lng !== null;
+      const q = hasPin ? `${Number(e.lat)},${Number(e.lng)}` : (e.venue ? encodeURIComponent([e.venue, e.parish, 'Jamaica'].filter(Boolean).join(', ')) : '');
+      if (q) { $('map').href = `https://www.google.com/maps/search/?api=1&query=${q}`; $('map').classList.remove('hide'); }
+      if (/^https:\/\//.test(e.image_url || '')) { $('photo').src = e.image_url; $('photo').style.display = 'block'; }
+    })
+    .catch(() => { $('title').textContent = "Couldn't load the event. Open it in the app instead."; });
+} else {
+  $('title').textContent = 'Find what’s going on across Jamaica';
+}
+</script>
+</body>
+</html>
